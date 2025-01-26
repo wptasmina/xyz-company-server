@@ -54,7 +54,7 @@ async function run() {
         res.send(result);
       });
   
-      /// Post HR data
+      // Post HR data
     app.post("/hr-account", async (req, res) => {
       const account = req.body;
       const query = { email: account.email };
@@ -65,8 +65,6 @@ async function run() {
       const result = await hrCollection.insertOne(account);
       res.send(result);
     });
-
-    //! Employee Account Related API
 
     // Get Employee data using Employee email
     app.get("/employee-account/:email", async (req, res) => {
@@ -159,8 +157,7 @@ async function run() {
       console.error("Error fetching HR and Employee data:", error);
       res.status(500).send({ message: "Failed to fetch data" });
     }
-  });
-    
+  });  
     
   // Post Assets data
   app.post("/assets", async (req, res) => {
@@ -169,28 +166,237 @@ async function run() {
     res.send(result);
   });      
     
-  
 
+    // Post Requested Asset
+        app.post("/requested-asset", async (req, res) => {
+          const asset = req.body;
+          const result = await requestedAssetsCollection.insertOne(asset);
+    
+          const id = asset.asset_id;
+          const query = { _id: new ObjectId(id) };
+          const assets = await assetsCollection.findOne(query);
+    
+          let count = 0;
+          if (assets.request_count) {
+            count = assets.request_count + 1;
+          } else {
+            count = 1;
+          }
+    
+          if (assets.product_quantity) {
+            let quantity = Number(assets.product_quantity);
+            const updatedQuantity = quantity - 1;
+    
+            const filter = { _id: new ObjectId(id) };
+            const updatedDoc = {
+              $set: {
+                request_count: count,
+                product_quantity: updatedQuantity, // Update the quantity here
+              },
+            };
+    
+            const updateResult = await assetsCollection.updateOne(
+              filter,
+              updatedDoc
+            );
+          }
+    
+          res.send(result);
+        });
+    
+        //Get requested asset using email, search, status filter, and asset_type filter
+        app.get("/requested-asset", async (req, res) => {
+          const email = req.query.email;
+          const searchQuery = req.query.search || ""; // Search query parameter for asset name
+          const status = req.query.status; // Status filter parameter
+          const assetType = req.query.asset_type; // Asset type filter parameter
+          let query = { requester_email: email };
+    
+          try {
+            // Fetch requested assets based on email
+            const result = await requestedAssetsCollection.find(query).toArray();
+    
+            // Fetch asset details and join them with requested assets
+            const assetPromises = result.map(async (request) => {
+              const assetQuery = { _id: new ObjectId(request.asset_id) }; // Assuming asset_id is an ObjectId
+              const asset = await assetsCollection.findOne(assetQuery);
+              if (asset) {
+                request.asset_name = asset.product_name; // Add product_name from assets collection
+                request.asset_type = asset.product_type; // Add product_type from assets collection
+              }
+              return request;
+            });
+    
+    const assetsWithDetails = await Promise.all(assetPromises);
+    // Filter results by asset_name if search query is provided
+    let filteredResults = searchQuery
+    ? assetsWithDetails.filter((request) =>
+        request.asset_name
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase())
+      )
+    : assetsWithDetails;
+
+  // Further filter by status if provided
+  if (status) {
+    filteredResults = filteredResults.filter(
+      (request) => request.status.toLowerCase() === status.toLowerCase()
+    );
+  }
+            
+  // Further filter by asset_type if provided
+  if (assetType) {
+    filteredResults = filteredResults.filter(
+      (request) =>
+        request.asset_type &&
+        request.asset_type.toLowerCase() === assetType.toLowerCase()
+    );
+  }
+
+  res.send(filteredResults); // Return the filtered results
+} catch (error) {
+  console.error("Error fetching requested assets:", error);
+  res.status(500).send({ message: "Internal Server Error" });
+}
+});  
+            
+    
+        //Get requested assets data using email and filter data by status: Pending
+        app.get("/requested-asset/pending", async (req, res) => {
+          const email = req.query.email;
+          const query = { requester_email: email, status: "Pending" };
+    
+          const result = await requestedAssetsCollection.find(query).toArray();
+    
+          for (const request of result) {
+            query1 = { _id: new ObjectId(request.asset_id) };
+            const asset = await assetsCollection.findOne(query1);
+            if (asset) {
+              request.asset_name = asset.product_name;
+            }
+          }
+          res.send(result);
+        });
+    
+        //Get request asset use request this month
+        app.get("/requested-asset/monthly", async (req, res) => {
+          const email = req.query.email;
+    
+          // Define the start and end of the current month
+          const currentDate = new Date();
+          const startOfMonth = new Date(
+            currentDate.getFullYear(),
+            currentDate.getMonth(),
+            1
+          ).toISOString();
+          const endOfMonth = new Date(
+            currentDate.getFullYear(),
+            currentDate.getMonth() + 1,
+            1
+          ).toISOString();
+    
+          // Query to filter by email and request date within the current month
+          const query = {
+            requester_email: email,
+            request_date: { $gte: startOfMonth, $lt: endOfMonth },
+          };
+    
+          // Fetch requests within the date range and sort by request_date (descending)
+          const result = await requestedAssetsCollection
+            .find(query)
+            .sort({ request_date: -1 }) // Sort: most recent first
+            .toArray();
+    
+          // Append asset names to the requests
+          for (const request of result) {
+            const assetQuery = { _id: new ObjectId(request.asset_id) };
+            const asset = await assetsCollection.findOne(assetQuery);
+    
+            if (asset) {
+              request.asset_name = asset.product_name; // Add asset name to the request
+            }
+          }
+    
+          // Send the final result
+          res.send(result);
+        });
+
+
+
+    // HR Pending requested asset
+        app.get("/requested-assets/pending", async (req, res) => {
+          const email = req.query.email; // HR email
+          const query = { hr_email: email, status: "Pending" };
+    
+          const result = await requestedAssetsCollection
+            .find(query)
+            .limit(5)
+            .toArray();
+    
+          // Enrich results with asset details
+          for (const request of result) {
+            const query1 = { _id: new ObjectId(request.asset_id) };
+            const asset = await assetsCollection.findOne(query1);
+            if (asset) {
+              request.asset_name = asset.product_name;
+              request.asset_type = asset.product_type;
+            }
+          }
+          res.send(result);
+        });
+    
        
+    
+        //Update Requested Asset
+        app.patch("/requested-asset/:id", async (req, res) => {
+          const id = req.params.id;
+          const updateStatus = req.body;
+    
+          // Perform the update
+          const result = await requestedAssetsCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: updateStatus }
+          );
+    
+          res.send(result);
+        });
+  
+        // Update Asset
+        app.patch("/assets/:id", async (req, res) => {
+          const asset = req.body;
+          const id = req.params.id;
+          const result = await assetsCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: asset }
+          );
+          res.send(result);
+        });
+    
+        //Delete Asset
+        app.delete("/assets/:id", async (req, res) => {
+          const id = req.params.id;
+          const query = { _id: new ObjectId(id) };
+          const result = await assetsCollection.deleteOne(query);
+          res.send(result);
+        });
 
 
   // Get Assets  sort by filter by product_type
   app.get("/assets", async (req, res) => {
     const { search, sort, product_type } = req.query;
 
-    let filter = {}; //meaning all assets are fetched
+    let filter = {}; 
 
-    // If a search query is provided, filter by asset name
     if (search) {
       filter.product_name = { $regex: search, $options: "i" }; // 'i' for case-insensitive search
     }
 
-    // If a product_type filter is provided, add it to the filter
+    // If a product_type filter is provided
     if (product_type && product_type !== "all") {
-      filter.product_type = product_type; // Filter by the specific product_type (Returnable or Non-returnable)
+      filter.product_type = product_type;
     }
 
-  // Define the sort option based on the query parameter (if provided)
+  // Define the sort
     let sortOption = {};
     if (sort === "asc") {
       sortOption = { product_quantity: 1 }; // Ascending order
@@ -200,7 +406,7 @@ async function run() {
 
     try {
       const result = await assetsCollection
-        .find(filter) // Apply the filter (search query and product_type filter)
+        .find(filter) // Apply the filter 
         .sort(sortOption) // Apply sorting by product_quantity
         .toArray();
       res.send(result);
@@ -245,6 +451,45 @@ async function run() {
   });          
     
     
+// HR Pending requested asset
+app.get("/requested-assets/pending", async (req, res) => {
+  const email = req.query.email; // HR email
+  const query = { hr_email: email, status: "Pending" };
+
+  const result = await requestedAssetsCollection
+    .find(query)
+    .limit(5)
+    .toArray();    
+    
+    // Enrich results with asset details
+    for (const request of result) {
+      const query1 = { _id: new ObjectId(request.asset_id) };
+      const asset = await assetsCollection.findOne(query1);
+      if (asset) {
+        request.asset_name = asset.product_name;
+        request.asset_type = asset.product_type;
+      }
+    }
+    res.send(result);
+  });      
+    
+  // Get HR most requested asset
+    
+   //Update Requested Asset
+   app.patch("/requested-asset/:id", async (req, res) => {
+    const id = req.params.id;
+    const updateStatus = req.body;
+
+    // Perform the update
+    const result = await requestedAssetsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateStatus }
+    );
+
+    res.send(result);
+  });   
+  
+  
   // Get Requested Asset
   app.get("/requested-assets", async (req, res) => {
     // HR email
@@ -295,7 +540,7 @@ async function run() {
     }
   });      
     
-      
+
 
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
