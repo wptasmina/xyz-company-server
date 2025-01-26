@@ -110,19 +110,19 @@ async function run() {
     });
 
 
-        // Patch Employee data
-        app.patch("/employee-account/:id", async (req, res) => {
-          const id = req.params.id; // Extract the ID from the URL
-          const updateData = req.body; // Data to update
-    
-          // Perform the update
-          const result = await employeeCollection.updateMany(
-            { _id: new ObjectId(id) },
-            { $set: updateData }
-          );
-    
-          res.send(result);
-        });
+  // Patch Employee data
+  app.patch("/employee-account/:id", async (req, res) => {
+    const id = req.params.id; // Extract the ID from the URL
+    const updateData = req.body; // Data to update
+
+    // Perform the update
+    const result = await employeeCollection.updateMany(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
+
+    res.send(result);
+  });      
     
         //! Get all account by email and find only role
         app.get("/user/:email", async (req, res) => {
@@ -139,87 +139,161 @@ async function run() {
           }
         });
     
-        //! Get all Users account
-        app.get("/user", async (req, res) => {
-          try {
-            // Fetch data from both collections in parallel
-            const [hrData, employeeData] = await Promise.all([
-              hrCollection.find().toArray(),
-              employeeCollection.find().toArray(),
-            ]);
+  //! Get all Users account
+  app.get("/user", async (req, res) => {
+    try {
+      // Fetch data from both collections in parallel
+      const [hrData, employeeData] = await Promise.all([
+        hrCollection.find().toArray(),
+        employeeCollection.find().toArray(),
+      ]);
+
+      // Combine the data from both collections
+      const result = {
+        hr: hrData,
+        employees: employeeData,
+      };
+
+      res.send(result); // Send the combined data
+    } catch (error) {
+      console.error("Error fetching HR and Employee data:", error);
+      res.status(500).send({ message: "Failed to fetch data" });
+    }
+  });
     
-            // Combine the data from both collections
-            const result = {
-              hr: hrData,
-              employees: employeeData,
-            };
     
-            res.send(result); // Send the combined data
-          } catch (error) {
-            console.error("Error fetching HR and Employee data:", error);
-            res.status(500).send({ message: "Failed to fetch data" });
-          }
-        });
-    
-        //! Assets Related APi
-    
-        // Post Assets data
-        app.post("/assets", async (req, res) => {
-          const asset = req.body;
-          const result = await assetsCollection.insertOne(asset);
-          res.send(result);
-        });
+  // Post Assets data
+  app.post("/assets", async (req, res) => {
+    const asset = req.body;
+    const result = await assetsCollection.insertOne(asset);
+    res.send(result);
+  });      
     
   
+
+       
+
+
+  // Get Assets  sort by filter by product_type
+  app.get("/assets", async (req, res) => {
+    const { search, sort, product_type } = req.query;
+
+    let filter = {}; //meaning all assets are fetched
+
+    // If a search query is provided, filter by asset name
+    if (search) {
+      filter.product_name = { $regex: search, $options: "i" }; // 'i' for case-insensitive search
+    }
+
+    // If a product_type filter is provided, add it to the filter
+    if (product_type && product_type !== "all") {
+      filter.product_type = product_type; // Filter by the specific product_type (Returnable or Non-returnable)
+    }
+
+  // Define the sort option based on the query parameter (if provided)
+    let sortOption = {};
+    if (sort === "asc") {
+      sortOption = { product_quantity: 1 }; // Ascending order
+    } else if (sort === "desc") {
+      sortOption = { product_quantity: -1 }; // Descending order
+    }
+
+    try {
+      const result = await assetsCollection
+        .find(filter) // Apply the filter (search query and product_type filter)
+        .sort(sortOption) // Apply sorting by product_quantity
+        .toArray();
+      res.send(result);
+    } catch (error) {
+      res
+        .status(500)
+        .send({ message: "Failed to fetch assets", error: error.message });
+    }
+  });  
+        
     
-        // Get Requested Asset
-        app.get("/requested-assets", async (req, res) => {
-          const email = req.query.email; // HR email
-          if (!email) {
-            return res.status(400).send("HR email is required");
-          }
+  // Get Assets sort by request_count an max 5
+  app.get("/assets/request-count", async (req, res) => {
+    const { limit, sort } = req.query;
+  
+    const maxItems = limit ? parseInt(limit) : 5;
+  
+    // default to descending (-1) on request_count
+    const sortOrder = sort === "asc" ? 1 : -1; 
+  
+    try {
+      // Fetch and sort assets request_count
+      const result = await assetsCollection
+        .find()
+        .sort({ request_count: sortOrder })
+        .limit(maxItems)
+        .toArray();
+  
+      res.send(result);
+    } catch (error) {
+      console.error("Error fetching assets:", error);
+      res.status(500).send({ error: "Failed to fetch assets." });
+    }
+  });      
+
+  // Get Assets using _id data
+  app.get("/assets/:id", async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const result = await assetsCollection.findOne(query);
+    res.send(result);
+  });          
     
-          const { requester_email, requester_name } = req.query;
     
-          // Build the search query with hr_email as the base condition
-          let searchQuery = { hr_email: email };
-    
-          // Add additional search filters if provided
-          if (requester_email) {
-            searchQuery.requester_email = {
-              $regex: requester_email,
-              $options: "i", // Case-insensitive match
-            };
-          }
-          if (requester_name) {
-            searchQuery.requester_name = {
-              $regex: requester_name,
-              $options: "i", // Case-insensitive match
-            };
-          }
-    
-          try {
-            // Fetch requested assets based on the search query
-            const result = await requestedAssetsCollection
-              .find(searchQuery)
-              .toArray();
-    
-            // Enrich results with asset details
-            for (const request of result) {
-              const query1 = { _id: new ObjectId(request.asset_id) };
-              const asset = await assetsCollection.findOne(query1);
-              if (asset) {
-                request.asset_name = asset.product_name;
-                request.asset_type = asset.product_type;
-              }
-            }
-    
-            res.send(result);
-          } catch (error) {
-            console.error("Error fetching requested assets:", error);
-            res.status(500).send("Internal Server Error");
-          }
-        });
+  // Get Requested Asset
+  app.get("/requested-assets", async (req, res) => {
+    // HR email
+    const email = req.query.email; 
+    if (!email) {
+      return res.status(400).send("HR email is required");
+    }
+
+    const { requester_email, requester_name } = req.query;
+
+    // Build the search query with hr-email
+    let searchQuery = { hr_email: email };
+
+    // Add additional search filters if provided
+    if (requester_email) {
+      searchQuery.requester_email = {
+        $regex: requester_email,
+        $options: "i", 
+      };
+    }
+    if (requester_name) {
+      searchQuery.requester_name = {
+        $regex: requester_name,
+        $options: "i", 
+      };
+    }
+
+    try {
+      // Fetch requested assets based on the search query
+      const result = await requestedAssetsCollection
+        .find(searchQuery)
+        .toArray();
+
+      // Enrich results with asset details
+      for (const request of result) {
+        const query1 = { _id: new ObjectId(request.asset_id) };
+        const asset = await assetsCollection.findOne(query1);
+        if (asset) {
+          request.asset_name = asset.product_name;
+          request.asset_type = asset.product_type;
+        }
+      }
+
+      res.send(result);
+    } catch (error) {
+      console.error("Error fetching requested assets:", error);
+      res.status(500).send("Internal Server Error");
+    }
+  });      
     
       
 
