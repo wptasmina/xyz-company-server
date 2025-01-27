@@ -122,20 +122,20 @@ async function run() {
     res.send(result);
   });      
     
-        //! Get all account by email and find only role
-        app.get("/user/:email", async (req, res) => {
-          const email = req.params.email;
-    
-          const user =
-            (await hrCollection.findOne({ email: email })) ||
-            (await employeeCollection.findOne({ email: email }));
-    
-          if (user) {
-            res.json({ role: user.role });
-          } else {
-            res.status(404).json({ message: "User not found" });
-          }
-        });
+  // Get all account by email and find only role
+  app.get("/user/:email", async (req, res) => {
+    const email = req.params.email;
+
+    const user =
+      (await hrCollection.findOne({ email: email })) ||
+      (await employeeCollection.findOne({ email: email }));
+
+    if (user) {
+      res.json({ role: user.role });
+    } else {
+      res.status(404).json({ message: "User not found" });
+    }
+  })      ;
     
   //! Get all Users account
   app.get("/user", async (req, res) => {
@@ -473,8 +473,7 @@ app.get("/requested-assets/pending", async (req, res) => {
     res.send(result);
   });      
     
-  // Get HR most requested asset
-    
+  
    //Update Requested Asset
    app.patch("/requested-asset/:id", async (req, res) => {
     const id = req.params.id;
@@ -541,6 +540,22 @@ app.get("/requested-assets/pending", async (req, res) => {
   });      
     
 
+  // create-payment 
+  app.post("/create-payment-intent", async (req, res) => {
+    const { amount } = req.body;
+    try {
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: amount * 100, // Amount in cents
+            currency: "usd",
+        });
+        res.send({
+            clientSecret: paymentIntent.client_secret,
+        });
+    } catch (error) {
+        res.status(500).send({ error: error.message });
+    }
+});
+
 
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
@@ -560,3 +575,4 @@ app.get('/',(req,res)=>{
 app.listen(port, ()=>{
     console.log('server running...')
 })
+
