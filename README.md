@@ -15,7 +15,7 @@
 
 | **Step**                  | **Commands / Instructions**                                                |
 |---------------------------|---------------------------------------------------------------------------|
-| **1. Clone the Server Repo** | `git clone https://github.com/wptasmina/xyz-company-server`               |
+| **1. Clone the Server Repo** | `https://github.com/wptasmina/xyz-company-server`               |
 | **2. Setup Backend**       | - Navigate to server folder: `cd xyz-company-server`<br>- Install dependencies: `npm install`<br>- Create a `.env` file with:<br>```env<br>PORT=5000<br>JWT_SECRET=your_jwt_secret<br>MONGO_URI=your_mongo_uri<br>```<br>- Start the server: `nodemon index.js` |
 
 ---
